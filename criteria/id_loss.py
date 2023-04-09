@@ -19,7 +19,7 @@ class IDLoss(nn.Module):
     def extract_feats(self, x):
         if x.shape[2] != 256:
             x = self.pool(x)
-        x = x[:, :, 35:223, 32:220]  # Crop interesting region
+        x = x[:, :, 64:64+188, 73:73+188]  # Crop interesting region
         x = self.face_pool(x)
         x_feats = self.facenet(x)
         return x_feats

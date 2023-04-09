@@ -8,6 +8,7 @@ import torch
 import torchvision
 from torch import optim
 from tqdm import tqdm
+import torch.nn.functional as F
 
 from criteria.clip_loss import CLIPLoss
 from criteria.id_loss import IDLoss
@@ -69,6 +70,7 @@ def main(args):
     else:
         optimizer = optim.Adam([latent], lr=args.lr)
 
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[500, 750], gamma=0.1)
     pbar = tqdm(range(args.step))
 
     for i in pbar:
@@ -78,10 +80,16 @@ def main(args):
 
         img_gen, _ = g_ema([latent], input_is_latent=True, randomize_noise=False, input_is_stylespace=args.work_in_stylespace)
 
-        c_loss = clip_loss(img_gen, text_inputs)
+        # compute CLIP and ID losses only in the head region
+        head_crop_gen = img_gen[..., 40:40 + 180, 165:165 + 180]
+        if True:
+            c_loss = clip_loss(head_crop_gen, text_inputs)
+        else:
+            c_loss = torch.tensor(0.0, requires_grad=True)
 
         if args.id_lambda > 0:
-            i_loss = id_loss(img_gen, img_orig)[0]
+            head_crop_orig = img_orig[..., 40:40 + 180, 165:165 + 180]
+            i_loss = id_loss(head_crop_gen, head_crop_orig)[0]
         else:
             i_loss = 0
 
@@ -97,6 +105,7 @@ def main(args):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        lr_scheduler.step()
 
         pbar.set_description(
             (
