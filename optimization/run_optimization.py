@@ -1,6 +1,8 @@
 import argparse
 import math
 import os
+import sys
+sys.path.append('..')
 
 import torch
 import torchvision
@@ -105,7 +107,7 @@ def main(args):
             with torch.no_grad():
                 img_gen, _ = g_ema([latent], input_is_latent=True, randomize_noise=False, input_is_stylespace=args.work_in_stylespace)
 
-            torchvision.utils.save_image(img_gen, f"results/{str(i).zfill(5)}.jpg", normalize=True, range=(-1, 1))
+            torchvision.utils.save_image(img_gen, f"{args.results_dir}/{str(i).zfill(5)}.jpg", normalize=True, range=(-1, 1))
 
     if args.mode == "edit":
         final_result = torch.cat([img_orig, img_gen])
@@ -137,8 +139,12 @@ if __name__ == "__main__":
     parser.add_argument("--results_dir", type=str, default="results")
     parser.add_argument('--ir_se50_weights', default='../pretrained_models/model_ir_se50.pth', type=str,
                              help="Path to facial recognition network used in ID loss")
+    parser.add_argument("--seed", type=int, default=None, help="StyleGAN resolution")
 
     args = parser.parse_args()
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
 
     result_image = main(args)
 
