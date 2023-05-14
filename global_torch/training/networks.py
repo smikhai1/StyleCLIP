@@ -6,7 +6,9 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-
+from collections import OrderedDict
+import sys
+sys.path.append('/Users/smikhai1/work/citrus/open-source/StyleCLIP/global_torch')
 import numpy as np
 import torch
 from torch_utils import misc
@@ -509,42 +511,90 @@ class SynthesisNetwork(torch.nn.Module):
                 x, img = block(x, img, None, encoded_styles=encoded_styles, **block_kwargs)
         return img
     
-    def W2S(self,ws):
-        
-        i=0
-        encoded_styles={}
+    def W2S(self, ws):
+        """
+
+        Args:
+            ws: Latent vectors from the W+ space [N, 512]
+
+        Returns: dict, mapping from layer name "conv_resolution_{res}": style latent, of size [N, C], where
+        C is the number of channels in the current layer
+
+        """
+        i = 0
+        encoded_styles = OrderedDict()
         for res in self.block_resolutions:
             block = getattr(self, f'b{res}')
-            if res==4: 
-                s=block.conv1.affine(ws[:,i])
-                encoded_styles[f'conv1_resolution_{res}'] =s
-                i+=1
-                s=block.torgb.affine(ws[:,i]) #* block.torgb.weight_gain
-                encoded_styles[f'toRGB_resolution_{res}'] =s
-#                i+=1
+            if res == 4:
+                s = block.conv1.affine(ws[:, i])
+                encoded_styles[f'conv1_resolution_{res}'] = s
+                i += 1
+                s = block.torgb.affine(ws[:, i])  # * block.torgb.weight_gain
+                encoded_styles[f'toRGB_resolution_{res}'] = s
             else:
-#                print(res,i)
-                s=block.conv0.affine(ws[:,i])
-                encoded_styles[f'conv0_resolution_{res}'] =s
-                i+=1
-#                print(res,i)
-                s=block.conv1.affine(ws[:,i])
-                encoded_styles[f'conv1_resolution_{res}'] =s
-                i+=1
-                # toRGB and next layer conv0 use the same w
-                s=block.torgb.affine(ws[:,i])#* block.torgb.weight_gain
-                encoded_styles[f'toRGB_resolution_{res}'] =s
-#                i+=1
-#        print(i)
-        
+                s = block.conv0.affine(ws[:, i])
+                encoded_styles[f'conv0_resolution_{res}'] = s
+                i += 1
+                s = block.conv1.affine(ws[:, i])
+                encoded_styles[f'conv1_resolution_{res}'] = s
+                i += 1
+                # toRGB and next layer conv0 use the same w;
+                s = block.torgb.affine(ws[:, i])  # * block.torgb.weight_gain
+                encoded_styles[f'toRGB_resolution_{res}'] = s
 
-            
-        
         return encoded_styles
     
 
-    
-        
+class StyleVector:
+    def __init__(self, data_dict: OrderedDict, include_torgb: bool = False):
+        """
+        Mapping from full layer name to the corresponding style tensor of shape [N, C]
+        Args:
+            data:
+        """
+        layer_names_with_style_sizes = []
+        for name, s in data_dict.items():
+            if not include_torgb and 'toRGB' in name:
+                continue
+            layer_names_with_style_sizes.append((name, s.shape[1]))
+        self.layer_names_with_style_sizes = layer_names_with_style_sizes
+        self.include_torgb = include_torgb
+
+    def dict2tensor(self, dict_):
+        """
+
+        Returns: tensor of shape [N, S], where S is the number of total number of channels
+        """
+        style_tensor = []
+        for name, s in dict_.items():
+            if not self.include_torgb and 'toRGB' in name:
+                continue
+            style_tensor.append(s)
+        style_tensor = torch.cat(style_tensor, dim=1)
+        return style_tensor
+
+    def tensor2dict(self, tensor, dict_with_torgb=None):
+        cur_idx = 0
+        dict_ = OrderedDict()
+        for name, num_ch in self.layer_names_with_style_sizes:
+            dict_[name] = tensor[:, cur_idx:cur_idx+num_ch]
+            cur_idx += num_ch
+
+        if not self.include_torgb and dict_with_torgb is not None:
+            for name, s in dict_with_torgb.items():
+                if 'toRGB' not in name:
+                    continue
+
+                num_repeats = tensor.shape[0] // s.shape[0]
+                s = s.clone().repeat(num_repeats, 1)
+                assert s.shape[0] == tensor.shape[0], f"{s.shape[0]}, {tensor.shape[0]}"
+                dict_[name] = s.clone()
+
+        assert len(dict_) == len(dict_with_torgb) == len(set(dict_.keys()) & set(dict_with_torgb.keys()))
+
+        return dict_
+
+
     
     
 
@@ -807,3 +857,25 @@ class Discriminator(torch.nn.Module):
         return x
 
 #----------------------------------------------------------------------------
+
+
+if __name__ == '__main__':
+
+    N = 16
+    style_dict = dict(conv0_resolution_8=torch.randn(N, 64),
+                      conv1_resolution_8=torch.randn(N, 64),
+                      toRGB_resolution_8=torch.randn(N, 64),
+                      conv0_resolution_16=torch.randn(N, 128),
+                      conv1_resolution_16=torch.randn(N, 128),
+                      toRGB_resolution_16=torch.randn(N, 128)
+                      )
+
+    style_vec = StyleVector(style_dict, include_torgb=False)
+    tensor = style_vec.dict2tensor(style_dict)
+    print(tensor.shape)
+
+    style_dict_1 = style_vec.tensor2dict(tensor, style_dict)
+    for name in style_dict:
+        assert torch.allclose(style_dict[name], style_dict_1[name])
+    print('Everything fine!')
+

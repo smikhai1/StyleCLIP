@@ -1,7 +1,4 @@
-
-
-
-import numpy as np 
+import numpy as np
 import torch
 
 from PIL import Image
@@ -9,9 +6,8 @@ import copy
 from manipulate import Manipulator
 import argparse
 
-import sys 
-sys.path.append('/cs/labs/danix/wuzongze/Tansformer_Manipulation/CLIP/')
 import clip
+
 
 def GetImgF(out,model,preprocess):
     imgs=out
@@ -33,7 +29,9 @@ def GetImgF(out,model,preprocess):
     
     return image_features1
 
+
 def GetFs(fs):
+    # fs shape [S, N, 2, d], fs3 shape [S, d]
     tmp=np.linalg.norm(fs,axis=-1)
     fs1=fs/tmp[:,:,:,None]
     fs2=fs1[:,:,1,:]-fs1[:,:,0,:]  # 5*sigma - (-5)* sigma
