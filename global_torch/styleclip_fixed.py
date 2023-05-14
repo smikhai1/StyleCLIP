@@ -13,7 +13,8 @@ from clip_templates import imagenet_templates
 # TODO: add support of saving and loading estimated channel relevances
 # TODO: debug attribute manipulation
 # TODO: make notebook with demo
-
+from PIL import Image
+import numpy as np
 
 @torch.no_grad()
 def encode_text_clip(text, model, device):
@@ -78,10 +79,10 @@ class StyleClipGlobal:
         shifted_style_tensor = style_tensor.clone()
         shifted_style_tensor[:, channel_id] += alpha * self.style_std[channel_id]  # [N, S]
         shifted_style_dict = style_handler.tensor2dict(shifted_style_tensor, styles_dict)
-        images = self.generator.synthesis(None, encoded_styles=shifted_style_dict, noise_mode='const')
+        images = self.generator.synthesis(None, encoded_styles=shifted_style_dict, noise_mode='const').clamp(-1.0, 1.0)
         images = (images + 1.0) / 2.0  # [N, C, H, W]
         image_embedds = encode_image_clip(images, self.clip_model, self.device)
-        return image_embedds
+        return image_embedds, images.permute(0, 2, 3, 1)
 
     @torch.no_grad()
     def _esitmate_relevance_scores(self):
@@ -92,10 +93,14 @@ class StyleClipGlobal:
         attribute_relevance_scores = []
         for ch_i in tqdm(range(styles_tensor.shape[1]), desc='Estimating channel relevance ...'):
             # predict positive embeddings
-            pos_embedds = self._predict_image_embeddings(styles_tensor, styles_handler, styles_dict,
+            pos_embedds, pos_img = self._predict_image_embeddings(styles_tensor, styles_handler, styles_dict,
                                                          alpha=5.0, channel_id=ch_i)
-            neg_embedds = self._predict_image_embeddings(styles_tensor, styles_handler, styles_dict,
+            neg_embedds, neg_img = self._predict_image_embeddings(styles_tensor, styles_handler, styles_dict,
                                                          alpha=-5.0, channel_id=ch_i)
+            if False:
+                print(pos_img.min(), pos_img.max())
+                Image.fromarray((pos_img[1].cpu().numpy() * 255).astype(np.uint8)).save(f'pos-ch_{ch_i}.jpg')
+                Image.fromarray((neg_img[1].cpu().numpy() * 255).astype(np.uint8)).save(f'neg-ch_{ch_i}.jpg')
 
             img_clip_delta = pos_embedds - neg_embedds
             img_clip_delta = img_clip_delta / torch.norm(img_clip_delta, dim=-1, keepdim=True)  # [N, d]
@@ -117,7 +122,8 @@ class StyleClipGlobal:
 
     @torch.no_grad()
     def sample_styles_dict(self, num_latents):
-        w_latents = torch.randn(num_latents, 18, 512, device=self.device, dtype=torch.float32)
+        z = torch.randn(num_latents, 512, device=self.device, dtype=torch.float32)
+        w_latents = self.generator.mapping(z, None)
         styles_dict = self.generator.synthesis.W2S(w_latents)
         return styles_dict
 
@@ -127,6 +133,7 @@ class StyleClipGlobal:
         scores = torch.where(torch.abs(self.attribute_relevance_scores) >= beta,
                              self.attribute_relevance_scores,
                              torch.zeros_like(self.attribute_relevance_scores))[None]  # [1, S]
+        scores /= torch.max(torch.abs(scores))
 
         ws = ws.to(device=self.device, dtype=torch.float32)
         styles_dict = self.generator.synthesis.W2S(ws)
