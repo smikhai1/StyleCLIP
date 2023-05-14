@@ -77,7 +77,7 @@ class StyleClipGlobal:
 
     def _predict_image_embeddings(self, style_tensor, style_handler, styles_dict, alpha, channel_id):
         shifted_style_tensor = style_tensor.clone()
-        shifted_style_tensor[:, channel_id] += alpha * self.style_std[channel_id]  # [N, S]
+        shifted_style_tensor[:, channel_id] = self.style_mean[channel_id] + alpha * self.style_std[channel_id]  # [N, S]
         shifted_style_dict = style_handler.tensor2dict(shifted_style_tensor, styles_dict)
         images = self.generator.synthesis(None, encoded_styles=shifted_style_dict, noise_mode='const').clamp(-1.0, 1.0)
         images = (images + 1.0) / 2.0  # [N, C, H, W]
@@ -94,9 +94,9 @@ class StyleClipGlobal:
         for ch_i in tqdm(range(styles_tensor.shape[1]), desc='Estimating channel relevance ...'):
             # predict positive embeddings
             pos_embedds, pos_img = self._predict_image_embeddings(styles_tensor, styles_handler, styles_dict,
-                                                         alpha=5.0, channel_id=ch_i)
+                                                         alpha=10.0, channel_id=ch_i)
             neg_embedds, neg_img = self._predict_image_embeddings(styles_tensor, styles_handler, styles_dict,
-                                                         alpha=-5.0, channel_id=ch_i)
+                                                         alpha=-10.0, channel_id=ch_i)
             if False:
                 print(pos_img.min(), pos_img.max())
                 Image.fromarray((pos_img[1].cpu().numpy() * 255).astype(np.uint8)).save(f'pos-ch_{ch_i}.jpg')
@@ -111,6 +111,7 @@ class StyleClipGlobal:
         self.attribute_relevance_scores = torch.tensor(attribute_relevance_scores,
                                                        device=self.device, dtype=torch.float32)
         print('Channel relevance estimation finished successfully!')
+        print(self.attribute_relevance_scores.min(), self.attribute_relevance_scores.max())
 
     def _compute_mean_std_style(self):
         styles_dict = self.sample_styles_dict(num_latents=100_000)
