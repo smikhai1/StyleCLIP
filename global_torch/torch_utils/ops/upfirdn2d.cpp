@@ -33,7 +33,7 @@ static torch::Tensor upfirdn2d(torch::Tensor x, torch::Tensor f, int upx, int up
     int outH = ((int)x.size(2) * upy + pady0 + pady1 - (int)f.size(0) + downy) / downy;
     TORCH_CHECK(outW >= 1 && outH >= 1, "output must be at least 1x1");
     torch::Tensor y = torch::empty({x.size(0), x.size(1), outH, outW}, x.options(), x.suggest_memory_format());
-    TORCH_CHECK(y.numel() <= INT_MAX, "output is too large");
+    //TORCH_CHECK(y.numel() <= INT_MAX, "output is too large");
 
     // Initialize CUDA kernel parameters.
     upfirdn2d_kernel_params p;
