@@ -48,7 +48,8 @@ def encode_image_clip(image, model, device):
 
 class StyleClipGlobal:
     def __init__(self, generator, clip_model, neutral_text, target_text,
-                 include_torgb_layers=False, num_samples=100, device='cuda', seed=1112):
+                 include_torgb_layers=False, num_samples=100, device='cuda',
+                 seed=1112, use_precomputed_scores=False):
         torch.random.manual_seed(seed)
         self.generator = generator
         self.include_torgb_layers = include_torgb_layers
@@ -61,11 +62,14 @@ class StyleClipGlobal:
         self.target_text = target_text
         self._compute_clip_textual_direction()
 
-        self.style_mean, self.style_std = None, None
-        self._compute_mean_std_style()
-
         self.attribute_relevance_scores = None  # [S,]
-        self._esitmate_relevance_scores()
+        self.style_mean, self.style_std = None, None
+
+        if use_precomputed_scores:
+            self._estimate_relevance_scores_with_precomp()
+        else:
+            self._compute_mean_std_style()
+            self._esitmate_relevance_scores()
 
     def _compute_clip_textual_direction(self):
         neutral_embedds = encode_text_clip(self.neutral_text, self.clip_model, self.device)
@@ -83,6 +87,11 @@ class StyleClipGlobal:
         images = (images + 1.0) / 2.0  # [N, C, H, W]
         image_embedds = encode_image_clip(images, self.clip_model, self.device)
         return image_embedds, images.permute(0, 2, 3, 1)
+
+    @torch.no_grad()
+    def _estimate_relevance_scores_with_precomp(self):
+        clip_img_emb_chn = torch.from_numpy(np.load('./npy/ffhq/fs3.npy')).to(device=self.device)  # [6048, 512]
+        self.attribute_relevance_scores = clip_img_emb_chn @ self.delta_t
 
     @torch.no_grad()
     def _esitmate_relevance_scores(self):
@@ -111,7 +120,6 @@ class StyleClipGlobal:
         self.attribute_relevance_scores = torch.tensor(attribute_relevance_scores,
                                                        device=self.device, dtype=torch.float32)
         print('Channel relevance estimation finished successfully!')
-        print(self.attribute_relevance_scores.min(), self.attribute_relevance_scores.max())
 
     def _compute_mean_std_style(self):
         styles_dict = self.sample_styles_dict(num_latents=100_000)
