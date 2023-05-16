@@ -62,13 +62,13 @@ class StyleClipGlobal:
         self.target_text = target_text
         self._compute_clip_textual_direction()
 
-        self.attribute_relevance_scores = None  # [S,]
         self.style_mean, self.style_std = None, None
+        self._compute_mean_std_style()
 
+        self.attribute_relevance_scores = None  # [S,]
         if use_precomputed_scores:
             self._estimate_relevance_scores_with_precomp()
         else:
-            self._compute_mean_std_style()
             self._esitmate_relevance_scores()
 
     def _compute_clip_textual_direction(self):
