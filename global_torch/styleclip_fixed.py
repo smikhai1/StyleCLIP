@@ -90,7 +90,7 @@ class StyleClipGlobal:
 
     @torch.no_grad()
     def _estimate_relevance_scores_with_precomp(self):
-        clip_img_emb_chn = torch.from_numpy(np.load('./npy/ffhq/fs3.npy')).to(device=self.device)  # [6048, 512]
+        clip_img_emb_chn = torch.from_numpy(np.load('./global_torch/npy/ffhq/fs3.npy')).to(device=self.device)  # [6048, 512]
         self.attribute_relevance_scores = clip_img_emb_chn @ self.delta_t
 
     @torch.no_grad()
